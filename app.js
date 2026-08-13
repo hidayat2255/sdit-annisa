@@ -1,9 +1,13 @@
 /* ==========================================================================
-   SDIT ANNISA - APP LOGIC (APP.JS)
+   SDIT ANNISA - APP LOGIC & GOOGLE SHEETS CLOUD SYNC (APP.JS)
    ========================================================================== */
 
 const DB_KEY = 'sdit_annisa_db_v2';
 const ADMIN_PASSWORD_CORRECT = 'hdt123';
+
+// 🌟 ISI DENGAN URL APPS SCRIPT ANDA DARI GOOGLE SHEETS
+// Contoh: "https://script.google.com/macros/s/AKfycbx.../exec"
+const GOOGLE_SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyX0v9Cq9eD3I3Ov3dLpq0p5DjAsG0GvlQp92LpqyfOlqbgdSfoYpTmcumyIwVFTNXj/exec";
 
 // INITIAL DEFAULT STATE (NPSN: 20231556, NAMA KEPALA SEKOLAH: Abdul Yakub, S.Ag)
 const DEFAULT_PROFIL = {
@@ -32,6 +36,41 @@ Kami percaya bahwa setiap anak adalah amanah berharga yang memiliki potensi isti
   telepon: '(021) 8243-1220',
   email: 'info@sditannisa.sch.id • www.sditannisa.sch.id'
 };
+
+const DEFAULT_BERITA_LIST = [
+  {
+    judul: "Penerimaan Peserta Didik Baru (PPDB) T.A 2026/2027 Resmi Dibuka",
+    kategori: "Pengumuman",
+    tanggal: "12 Agustus 2026",
+    fotos: [
+      "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=600&q=80",
+      "https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&w=600&q=80",
+      "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?auto=format&fit=crop&w=600&q=80"
+    ],
+    ringkasan: "SDIT ANNISA secara resmi membuka pendaftaran calon peserta didik baru tahun ajaran 2026/2027 Gelombang 1. Segera daftarkan putra-putri Anda sebelum kuota terpenuhi."
+  },
+  {
+    judul: "Juara 1 Lomba Tahfidz Al-Qur'an Juz 30 Tingkat Kota Bekasi",
+    kategori: "Prestasi",
+    tanggal: "08 Agustus 2026",
+    fotos: [
+      "https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=600&q=80",
+      "https://images.unsplash.com/photo-1588072432836-e10032774350?auto=format&fit=crop&w=600&q=80"
+    ],
+    ringkasan: "Selamat kepada ananda Umar Jordan atas raihan pretasi membanggakan meraih Juara 1 Musabaqah Hifdzil Qur'an (MHQ) Juz 30 antar SD/MI se-Kota Bekasi."
+  },
+  {
+    judul: "Pelaksanaan Outing Class & Literasi Digital Santri SDIT ANNISA",
+    kategori: "Kegiatan",
+    tanggal: "01 Agustus 2026",
+    fotos: [
+      "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=600&q=80",
+      "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=600&q=80",
+      "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80"
+    ],
+    ringkasan: "Kegiatan edukatif outdoor mengenalkan sains teknologi, lingkungan hidup, serta pembiasaan tadarus Al-Qur'an bersama para ustadz/ustadzah."
+  }
+];
 
 const DEFAULT_INVENTARIS_LIST = [
   { "Nama Ruang": "Ruang Kelas 1", "Nama Barang": "Meja Siswa", "Jumlah": "20", "Satuan": "Unit", "Kondisi": "Baik", "Keterangan": "Kayu Jati Awet" },
@@ -68,6 +107,8 @@ let selectedGuruIndexForPhotoUpload = -1;
 let selectedLulusanIndexForPhotoUpload = -1;
 let selectedSuratIndexForFileUpload = -1;
 let currentActiveRoomNameForInventaris = '';
+let tempUploadedBeritaPhotos = [];
+let beritaAutoSlideIntervals = [];
 
 // CONFIG FOR DYNAMIC MASTER TABLES
 const TABLE_CFG = {
@@ -102,11 +143,52 @@ document.addEventListener('DOMContentLoaded', () => {
   updateCurrentDate();
   updateAdminUIState();
   updateDashboardStats();
+  renderBeritaGrid();
   renderProfilView();
   restoreSavedSidebarState();
+  syncFromGoogleSheetsCloud();
 });
 
-// TOGGLE COLLAPSE SIDEBAR MENU DENGAN ICON SEGITIGA (◀ / ▶)
+// CLOUD SYNC WITH GOOGLE SHEETS API
+function syncFromGoogleSheetsCloud() {
+  if (!GOOGLE_SHEETS_WEB_APP_URL || GOOGLE_SHEETS_WEB_APP_URL.trim() === '') return;
+
+  fetch(GOOGLE_SHEETS_WEB_APP_URL)
+    .then(res => res.json())
+    .then(cloudDb => {
+      if (cloudDb && typeof cloudDb === 'object') {
+        let hasData = false;
+        Object.keys(cloudDb).forEach(k => {
+          if (Array.isArray(cloudDb[k]) && cloudDb[k].length > 0) {
+            db[k] = cloudDb[k];
+            hasData = true;
+          }
+        });
+        if (hasData) {
+          saveDatabaseLocalOnly();
+          updateDashboardStats();
+          renderBeritaGrid();
+          refreshCurrentSection();
+        }
+      }
+    })
+    .catch(err => {
+      console.warn('Sync Google Sheets offline / fallback to local storage:', err);
+    });
+}
+
+function syncToGoogleSheetsCloud() {
+  if (!GOOGLE_SHEETS_WEB_APP_URL || GOOGLE_SHEETS_WEB_APP_URL.trim() === '') return;
+
+  fetch(GOOGLE_SHEETS_WEB_APP_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(db)
+  }).catch(err => console.warn('Cloud sync error:', err));
+}
+
+// TOGGLE COLLAPSE & AUTO-HIDE SIDEBAR MENU DENGAN ICON SEGITIGA (◀ / ▶)
 function toggleSidebarCollapse() {
   const sidebar = document.querySelector('.sidebar');
   const main = document.querySelector('.main');
@@ -114,30 +196,59 @@ function toggleSidebarCollapse() {
 
   if (!sidebar || !main) return;
 
-  const isCollapsed = sidebar.classList.toggle('collapsed');
-  main.classList.toggle('expanded', isCollapsed);
+  const isMobile = window.innerWidth <= 768;
 
-  if (icon) {
-    if (isCollapsed) {
-      icon.className = 'fa-solid fa-caret-right';
+  if (isMobile) {
+    const isMobileOpen = sidebar.classList.toggle('mobile-open');
+    let backdrop = document.querySelector('.sidebar-mobile-backdrop');
+
+    if (isMobileOpen) {
+      if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.className = 'sidebar-mobile-backdrop';
+        backdrop.onclick = () => toggleSidebarCollapse();
+        document.body.appendChild(backdrop);
+      }
+      if (icon) icon.className = 'fa-solid fa-caret-left';
     } else {
-      icon.className = 'fa-solid fa-caret-left';
+      if (backdrop) backdrop.remove();
+      if (icon) icon.className = 'fa-solid fa-caret-right';
     }
-  }
+  } else {
+    const isCollapsed = sidebar.classList.toggle('collapsed');
+    main.classList.toggle('expanded', isCollapsed);
 
-  localStorage.setItem('sdit_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+    if (icon) {
+      if (isCollapsed) {
+        icon.className = 'fa-solid fa-caret-right';
+      } else {
+        icon.className = 'fa-solid fa-caret-left';
+      }
+    }
+
+    localStorage.setItem('sdit_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+  }
 }
 
 function restoreSavedSidebarState() {
-  const isCollapsed = localStorage.getItem('sdit_sidebar_collapsed') === 'true';
+  const isMobile = window.innerWidth <= 768;
   const sidebar = document.querySelector('.sidebar');
   const main = document.querySelector('.main');
   const icon = document.getElementById('sidebarToggleIcon');
 
-  if (isCollapsed && sidebar && main) {
-    sidebar.classList.add('collapsed');
-    main.classList.add('expanded');
+  if (isMobile) {
+    if (sidebar) sidebar.classList.remove('mobile-open', 'collapsed');
+    if (main) main.classList.remove('expanded');
     if (icon) icon.className = 'fa-solid fa-caret-right';
+  } else {
+    const isCollapsed = localStorage.getItem('sdit_sidebar_collapsed') === 'true';
+    if (isCollapsed && sidebar && main) {
+      sidebar.classList.add('collapsed');
+      main.classList.add('expanded');
+      if (icon) icon.className = 'fa-solid fa-caret-right';
+    } else if (icon) {
+      icon.className = 'fa-solid fa-caret-left';
+    }
   }
 }
 
@@ -146,6 +257,7 @@ function loadDatabase() {
   if (!dataStr) {
     const initDb = {
       profil: DEFAULT_PROFIL,
+      berita: DEFAULT_BERITA_LIST,
       guru: [],
       siswa: [],
       masuk: [],
@@ -164,6 +276,14 @@ function loadDatabase() {
   try {
     const parsed = JSON.parse(dataStr);
     if (!parsed.profil) parsed.profil = DEFAULT_PROFIL;
+    if (!parsed.berita || parsed.berita.length === 0) parsed.berita = DEFAULT_BERITA_LIST;
+    
+    parsed.berita.forEach(b => {
+      if (!b.fotos || !Array.isArray(b.fotos) || b.fotos.length === 0) {
+        b.fotos = b.foto ? [b.foto] : ["https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=600&q=80"];
+      }
+    });
+
     parsed.profil.npsn = "20231556";
     parsed.profil.namaKepala = "Abdul Yakub, S.Ag";
     if (!parsed.guru) parsed.guru = [];
@@ -176,6 +296,7 @@ function loadDatabase() {
   } catch (e) {
     return {
       profil: DEFAULT_PROFIL,
+      berita: DEFAULT_BERITA_LIST,
       guru: [],
       siswa: [],
       masuk: [],
@@ -186,9 +307,14 @@ function loadDatabase() {
   }
 }
 
-function saveDatabase() {
+function saveDatabaseLocalOnly() {
   localStorage.setItem(DB_KEY, JSON.stringify(db));
+}
+
+function saveDatabase() {
+  saveDatabaseLocalOnly();
   updateDashboardStats();
+  syncToGoogleSheetsCloud();
 }
 
 function updateCurrentDate() {
@@ -204,7 +330,6 @@ function parseDateComponents(str) {
 
   const cleanStr = String(str).trim();
 
-  // 1. CEK ATAU DETEKSI EXCEL SERIAL DATE NUMBER
   const isNumeric = /^\d{5}(\.\d+)?$/.test(cleanStr) || (typeof str === 'number' && str > 25569 && str < 100000);
   if (isNumeric) {
     const serial = parseFloat(cleanStr);
@@ -220,7 +345,6 @@ function parseDateComponents(str) {
     }
   }
 
-  // 2. CEK FORMAT DD/MM/YYYY ATAU DD-MM-YYYY ATAU DD.MM.YYYY
   const dmYMatch = cleanStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (dmYMatch) {
     return {
@@ -230,7 +354,6 @@ function parseDateComponents(str) {
     };
   }
 
-  // 3. CEK FORMAT YYYY-MM-DD ATAU YYYY/MM/DD
   const YmdMatch = cleanStr.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
   if (YmdMatch) {
     return {
@@ -240,7 +363,6 @@ function parseDateComponents(str) {
     };
   }
 
-  // 4. FALLBACK JS DATE
   const d = new Date(cleanStr);
   if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 2100) {
     return {
@@ -253,7 +375,6 @@ function parseDateComponents(str) {
   return null;
 }
 
-// FORMAT TANGGAL LAHIR DI DETAIL DIKONVERSI KE FORMAT DD MMMM YYYY
 function formatIndonesianDate(dateStr) {
   if (!dateStr) return '-';
   const parsed = parseDateComponents(dateStr);
@@ -293,7 +414,7 @@ function handleAdminLoginSubmit(e) {
     sessionStorage.setItem('sdit_admin_logged_in', 'true');
     closeModal('adminAuthModal');
     updateAdminUIState();
-    alert('🎉 Login Admin Berhasil!\n\nSeluruh menu Edit, Hapus, Tambah Data, Unggah Foto, Unggah File Surat PDF/Dokumen, Kelola Ruangan Inventaris, serta Unduh/Unggah Excel telah diaktifkan.');
+    alert('🎉 Login Admin Berhasil!\n\nSeluruh menu Edit, Hapus, Tambah Data, Unggah Foto, Unggah File Surat PDF/Dokumen, Kelola Ruangan Inventaris, Menu Sistem Backup/Restore, serta Unduh/Unggah Excel telah diaktifkan.');
     refreshCurrentSection();
   } else {
     alert('❌ Password Salah!');
@@ -302,16 +423,56 @@ function handleAdminLoginSubmit(e) {
 
 function updateAdminUIState() {
   const btnAdmin = document.getElementById('btnAdminIcon');
-  if (!btnAdmin) return;
+  if (btnAdmin) {
+    if (isAdminLoggedIn) {
+      btnAdmin.classList.add('is-logged-in');
+    } else {
+      btnAdmin.classList.remove('is-logged-in');
+    }
+  }
 
-  if (isAdminLoggedIn) {
-    btnAdmin.classList.add('is-logged-in');
-  } else {
-    btnAdmin.classList.remove('is-logged-in');
+  // PROTEKSI MENU SISTEM (BACKUP & RESTORE HANYA TAMPIL SAAT ADMIN LOGIN)
+  const sysWrapper = document.getElementById('adminSystemNavWrapper');
+  if (sysWrapper) {
+    sysWrapper.style.display = isAdminLoggedIn ? 'block' : 'none';
+  }
+
+  // PROTEKSI TOMBOL DASHBOARD HEADER (LIHAT PROFIL SEKOLAH & EXPORT BACKUP HANYA SAAT ADMIN LOGIN)
+  const dashHeaderBtnWrapper = document.getElementById('adminDashHeaderBtnWrapper');
+  if (dashHeaderBtnWrapper) {
+    if (isAdminLoggedIn) {
+      dashHeaderBtnWrapper.innerHTML = `
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button class="btn btn-secondary" onclick="quickNav('profil')">
+            <i class="fa-solid fa-school"></i> 🏫 Lihat Profil Sekolah
+          </button>
+          <button class="btn btn-primary" onclick="exportAllData()">
+            <i class="fa-solid fa-download"></i> 💾 Export Data Backup
+          </button>
+        </div>
+      `;
+    } else {
+      dashHeaderBtnWrapper.innerHTML = '';
+    }
+  }
+
+  // PROTEKSI TOMBOL "+ TAMBAH BERITA" DI DASHBOARD
+  const beritaBtnWrapper = document.getElementById('adminTambahBeritaBtnWrapper');
+  if (beritaBtnWrapper) {
+    if (isAdminLoggedIn) {
+      beritaBtnWrapper.innerHTML = `
+        <button class="btn btn-emerald" style="padding:6px 14px;font-size:12px;" onclick="openFormModalBerita()">
+          <i class="fa-solid fa-plus"></i> + Tambah Berita Baru
+        </button>
+      `;
+    } else {
+      beritaBtnWrapper.innerHTML = '';
+    }
   }
 }
 
 function refreshCurrentSection() {
+  renderBeritaGrid();
   if (currentSectionId === 'profil') {
     renderProfilView();
   } else if (currentSectionId !== 'dashboard') {
@@ -330,10 +491,21 @@ function showSection(id, btn) {
   document.getElementById('profil').classList.toggle('hide', id !== 'profil');
   document.getElementById('contentSection').classList.toggle('hide', id === 'dashboard' || id === 'profil');
 
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector('.sidebar');
+    const backdrop = document.querySelector('.sidebar-mobile-backdrop');
+    const icon = document.getElementById('sidebarToggleIcon');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (backdrop) backdrop.remove();
+    if (icon) icon.className = 'fa-solid fa-caret-right';
+  }
+
   if (id === 'profil') {
     renderProfilView();
   } else if (id !== 'dashboard') {
     renderTable(id);
+  } else {
+    renderBeritaGrid();
   }
 }
 
@@ -371,6 +543,306 @@ function updateDashboardStats() {
     logs.push(`Administrasi: <b>${(db.administrasi || []).length} Surat Tersimpan</b>`);
     
     activityLog.innerHTML = logs.map(l => `<div style="padding:8px 0;border-bottom:1px solid #e2e8f0"><i class="fa-solid fa-check" style="color:var(--emerald)"></i> ${l}</div>`).join('');
+  }
+}
+
+// BERITA TERKINI RENDERER & MODE SLIDE CAROUSEL OTOMATIS
+function clearBeritaAutoSlideTimers() {
+  beritaAutoSlideIntervals.forEach(t => clearInterval(t));
+  beritaAutoSlideIntervals = [];
+}
+
+function renderBeritaGrid() {
+  clearBeritaAutoSlideTimers();
+  const container = document.getElementById('beritaGrid');
+  if (!container) return;
+
+  const bList = db.berita || DEFAULT_BERITA_LIST;
+
+  if (bList.length === 0) {
+    container.innerHTML = `
+      <div style="grid-column: span 3;padding:24px;text-align:center;color:var(--text-muted)">
+        Belum ada berita atau informasi terkini yang diunggah.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = bList.map((item, bIdx) => {
+    let photoArr = item.fotos && Array.isArray(item.fotos) && item.fotos.length > 0 ? item.fotos : (item.foto ? [item.foto] : ['https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=600&q=80']);
+    const isMultiPhoto = photoArr.length > 1;
+
+    return `
+      <div class="berita-card-minimal">
+        <div>
+          <div class="berita-img-frame" id="beritaFrame_${bIdx}">
+            <span class="berita-category-chip"><i class="fa-solid fa-tag"></i> ${esc(item.kategori || 'Berita')}</span>
+            
+            <div class="berita-carousel-track" id="beritaTrack_${bIdx}">
+              ${photoArr.map(pUrl => `
+                <img src="${esc(pUrl)}" class="berita-carousel-slide" alt="${esc(item.judul)}">
+              `).join('')}
+            </div>
+
+            ${isMultiPhoto ? `
+              <button class="berita-slide-btn prev" onclick="moveBeritaSlide(${bIdx}, -1)"><i class="fa-solid fa-chevron-left"></i></button>
+              <button class="berita-slide-btn next" onclick="moveBeritaSlide(${bIdx}, 1)"><i class="fa-solid fa-chevron-right"></i></button>
+              
+              <div class="berita-slide-dots" id="beritaDots_${bIdx}">
+                ${photoArr.map((_, pIdx) => `
+                  <span class="berita-slide-dot ${pIdx === 0 ? 'active' : ''}" onclick="goToBeritaSlide(${bIdx}, ${pIdx})"></span>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="berita-body">
+            <div class="berita-date">
+              <i class="fa-regular fa-calendar"></i> ${esc(item.tanggal || '12 Agustus 2026')}
+              ${isMultiPhoto ? `<span style="margin-left:auto;color:var(--emerald);font-weight:700;"><i class="fa-solid fa-images"></i> ${photoArr.length} Foto Slide</span>` : ''}
+            </div>
+            <div class="berita-title-text">${esc(item.judul)}</div>
+            <div class="berita-snippet-text">${esc(item.ringkasan)}</div>
+          </div>
+        </div>
+
+        ${isAdminLoggedIn ? `
+          <div style="padding:10px 16px;border-top:1px dashed var(--border);display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn btn-secondary" style="padding:4px 8px;font-size:11px" onclick="openFormModalBerita(${bIdx})" title="Edit Berita"><i class="fa-solid fa-pen"></i> Edit</button>
+            <button class="btn btn-danger" style="padding:4px 8px;font-size:11px" onclick="deleteBerita(${bIdx})" title="Hapus Berita"><i class="fa-solid fa-trash"></i> Hapus</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  bList.forEach((item, bIdx) => {
+    let photoArr = item.fotos && Array.isArray(item.fotos) && item.fotos.length > 0 ? item.fotos : (item.foto ? [item.foto] : []);
+    if (photoArr.length > 1) {
+      let currentSlide = 0;
+      const interval = setInterval(() => {
+        currentSlide = (currentSlide + 1) % photoArr.length;
+        goToBeritaSlide(bIdx, currentSlide);
+      }, 3500);
+      beritaAutoSlideIntervals.push(interval);
+    }
+  });
+}
+
+function moveBeritaSlide(bIdx, direction) {
+  const track = document.getElementById(`beritaTrack_${bIdx}`);
+  const dotsContainer = document.getElementById(`beritaDots_${bIdx}`);
+  if (!track) return;
+
+  const totalSlides = track.children.length;
+  let currentActive = 0;
+
+  if (dotsContainer) {
+    const dots = Array.from(dotsContainer.children);
+    currentActive = dots.findIndex(d => d.classList.contains('active'));
+    if (currentActive < 0) currentActive = 0;
+  }
+
+  let newIdx = (currentActive + direction + totalSlides) % totalSlides;
+  goToBeritaSlide(bIdx, newIdx);
+}
+
+function goToBeritaSlide(bIdx, slideIdx) {
+  const track = document.getElementById(`beritaTrack_${bIdx}`);
+  const dotsContainer = document.getElementById(`beritaDots_${bIdx}`);
+  if (!track) return;
+
+  track.style.transform = `translateX(-${slideIdx * 100}%)`;
+
+  if (dotsContainer) {
+    const dots = Array.from(dotsContainer.children);
+    dots.forEach((dot, idx) => {
+      dot.classList.toggle('active', idx === slideIdx);
+    });
+  }
+}
+
+// UPLOAD BANYAK FOTO BERITA KHUSUS ADMIN
+function triggerBeritaPhotosUpload() {
+  document.getElementById('beritaPhotosFileInput').value = '';
+  document.getElementById('beritaPhotosFileInput').click();
+}
+
+function handleBeritaPhotosUpload(event) {
+  const files = Array.from(event.target.files);
+  if (!files || files.length === 0) return;
+
+  let loadedCount = 0;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      tempUploadedBeritaPhotos.push(e.target.result);
+      loadedCount++;
+      if (loadedCount === files.length) {
+        updateBeritaPhotoPreviewList();
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function removeTempUploadedPhoto(idx) {
+  tempUploadedBeritaPhotos.splice(idx, 1);
+  updateBeritaPhotoPreviewList();
+}
+
+function updateBeritaPhotoPreviewList() {
+  const previewBox = document.getElementById('beritaPhotoPreviewBox');
+  if (!previewBox) return;
+
+  if (tempUploadedBeritaPhotos.length === 0) {
+    previewBox.innerHTML = `
+      <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;border:1px dashed var(--border);border-radius:10px;">
+        Belum ada foto diunggah. Klik <strong>"📤 Unggah File Foto Berita"</strong> di atas.
+      </div>
+    `;
+    return;
+  }
+
+  previewBox.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--emerald);margin-bottom:8px;">
+      <i class="fa-solid fa-images"></i> Terunggah ${tempUploadedBeritaPhotos.length} Foto (Mode Slide Otomatis Aktif):
+    </div>
+    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;">
+      ${tempUploadedBeritaPhotos.map((url, idx) => `
+        <div style="position:relative;width:90px;height:70px;flex-shrink:0;border-radius:8px;overflow:hidden;border:1px solid var(--border)">
+          <img src="${esc(url)}" style="width:100%;height:100%;object-fit:cover">
+          <button type="button" onclick="removeTempUploadedPhoto(${idx})" style="position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;border:0;width:20px;height:20px;border-radius:50%;cursor:pointer;font-size:10px;display:grid;place-items:center;">&times;</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function openFormModalBerita(idx = -1) {
+  if (!isAdminLoggedIn) {
+    handleAdminIconClick();
+    return;
+  }
+
+  const bList = db.berita || DEFAULT_BERITA_LIST;
+  const item = idx >= 0 ? bList[idx] : {};
+
+  tempUploadedBeritaPhotos = item.fotos && Array.isArray(item.fotos) && item.fotos.length > 0 ? [...item.fotos] : (item.foto ? [item.foto] : []);
+
+  const bodyEl = document.getElementById('formModalBody');
+  document.getElementById('formModalTitle').textContent = (idx >= 0 ? 'Edit ' : 'Tambah ') + 'Berita / Informasi Sekolah';
+
+  bodyEl.innerHTML = `
+    <form onsubmit="saveBeritaForm(event, ${idx})">
+      <div class="form-grid">
+        <div class="form-group full-width">
+          <label>Judul Berita / Pengumuman</label>
+          <input type="text" id="fBeritaJudul" value="${esc(item.judul || '')}" placeholder="Contoh: Pembukaan PPDB Gelombang 1 T.A 2026/2027" required autofocus>
+        </div>
+        <div class="form-group">
+          <label>Kategori Berita</label>
+          <select id="fBeritaKategori">
+            <option value="Pengumuman" ${item.kategori === 'Pengumuman' ? 'selected' : ''}>Pengumuman</option>
+            <option value="Prestasi" ${item.kategori === 'Prestasi' ? 'selected' : ''}>Prestasi</option>
+            <option value="Kegiatan" ${item.kategori === 'Kegiatan' ? 'selected' : ''}>Kegiatan</option>
+            <option value="Berita" ${item.kategori === 'Berita' ? 'selected' : ''}>Berita Umum</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Tanggal Berita</label>
+          <input type="text" id="fBeritaTanggal" value="${esc(item.tanggal || '12 Agustus 2026')}" required>
+        </div>
+
+        <div class="form-group full-width">
+          <label>Unggah Galeri Foto Berita (Pilih 1 atau Banyak Foto Sekaligus)</label>
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+            <button type="button" class="btn btn-emerald" onclick="triggerBeritaPhotosUpload()">
+              <i class="fa-solid fa-file-arrow-up"></i> 📤 Unggah File Foto Berita (Bisa Banyak)
+            </button>
+            <span style="font-size:12px;color:var(--text-muted)">Dapat memilih lebih dari 1 foto untuk mode slide otomatis.</span>
+          </div>
+
+          <div id="beritaPhotoPreviewBox">
+            <!-- Dynamic Uploaded Photo Previews -->
+          </div>
+        </div>
+
+        <div class="form-group full-width">
+          <label>Atau Input Manual URL Foto (Pisahkan koma jika lebih dari 1 URL)</label>
+          <input type="text" id="fBeritaFotoUrlInput" placeholder="https://..., https://..." value="${esc(tempUploadedBeritaPhotos.filter(p => p.startsWith('http')).join(', '))}">
+        </div>
+
+        <div class="form-group full-width">
+          <label>Ringkasan Isi Berita / Informasi</label>
+          <textarea id="fBeritaRingkasan" rows="4" required>${esc(item.ringkasan || '')}</textarea>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('formModal')">Batal</button>
+        <button type="submit" class="btn btn-emerald"><i class="fa-solid fa-floppy-disk"></i> Simpan Berita</button>
+      </div>
+    </form>
+  `;
+
+  updateBeritaPhotoPreviewList();
+  openModal('formModal');
+}
+
+function saveBeritaForm(e, idx) {
+  e.preventDefault();
+
+  const urlInputRaw = document.getElementById('fBeritaFotoUrlInput').value.trim();
+  let manualUrls = [];
+  if (urlInputRaw) {
+    manualUrls = urlInputRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
+  }
+
+  let finalPhotos = [...tempUploadedBeritaPhotos];
+  manualUrls.forEach(url => {
+    if (!finalPhotos.includes(url)) {
+      finalPhotos.push(url);
+    }
+  });
+
+  if (finalPhotos.length === 0) {
+    finalPhotos = ["https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=600&q=80"];
+  }
+
+  const newBerita = {
+    judul: document.getElementById('fBeritaJudul').value.trim(),
+    kategori: document.getElementById('fBeritaKategori').value,
+    tanggal: document.getElementById('fBeritaTanggal').value.trim(),
+    fotos: finalPhotos,
+    foto: finalPhotos[0],
+    ringkasan: document.getElementById('fBeritaRingkasan').value.trim()
+  };
+
+  if (!db.berita) db.berita = [];
+
+  if (idx >= 0) {
+    db.berita[idx] = newBerita;
+  } else {
+    db.berita.unshift(newBerita);
+  }
+
+  saveDatabase();
+  closeModal('formModal');
+  renderBeritaGrid();
+  alert('✨ Berita / Informasi Sekolah berhasil disimpan (Mode Slide Otomatis Aktif)!');
+}
+
+function deleteBerita(idx) {
+  if (!isAdminLoggedIn) {
+    handleAdminIconClick();
+    return;
+  }
+
+  if (confirm('Apakah Anda yakin ingin menghapus berita ini?')) {
+    db.berita.splice(idx, 1);
+    saveDatabase();
+    renderBeritaGrid();
   }
 }
 
@@ -1154,7 +1626,6 @@ function renderTable(id) {
     return;
   }
 
-  // 1. TAMPILAN KHUSUS DATA GURU
   if (id === 'guru') {
     tableContainer.innerHTML = `
       <div class="guru-cards-grid">
@@ -1199,7 +1670,6 @@ function renderTable(id) {
     return;
   }
 
-  // 2. TAMPILAN KHUSUS DATA LULUSAN ALUMNI
   if (id === 'lulusan') {
     tableContainer.innerHTML = `
       <div class="lulusan-cards-grid">
@@ -1244,7 +1714,6 @@ function renderTable(id) {
     return;
   }
 
-  // 3. TAMPILAN KHUSUS INVENTARIS: NAMA RUANG, JUMLAH INVENTARIS, & TOMBOL PENSIL ✏️ KELOLA RUANGAN
   if (id === 'inventaris') {
     const roomMap = {};
     items.forEach(row => {
@@ -1303,7 +1772,6 @@ function renderTable(id) {
     return;
   }
 
-  // 4. TABEL STANDAR UNTUK MENU LAINNYA
   const isPindahanSection = id === 'masuk' || id === 'keluar';
   const isAdministrasiSection = id === 'administrasi';
 
@@ -1736,11 +2204,21 @@ function exportAllData() {
 }
 
 function backupData() {
+  if (!isAdminLoggedIn) {
+    alert('Silakan login via Icon Admin (👤) terlebih dahulu.');
+    handleAdminIconClick();
+    return;
+  }
   exportAllData();
   alert('💾 Backup data JSON berhasil diunduh.');
 }
 
 function restoreData() {
+  if (!isAdminLoggedIn) {
+    alert('Silakan login via Icon Admin (👤) terlebih dahulu.');
+    handleAdminIconClick();
+    return;
+  }
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json';
